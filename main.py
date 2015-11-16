@@ -3,13 +3,22 @@ import fnmatch
 import requests
 import time
 import subprocess as sp
-
-import httplib2
 import pprint
 
-from apiclient.discovery import build
-from apiclient.http import MediaFileUpload
-from oauth2client.client import OAuth2WebServerFlow
+from apiclient import discovery
+import httplib2
+
+import oauth2client
+from oauth2client import client
+from oauth2client import tools
+
+try:
+    import argparse
+    flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
+except ImportError:
+    flags = None
+
+#import drive_auth as auth
 
 INTERVAL = 10
 ADMIN_ID = 162457279
@@ -17,15 +26,15 @@ URL_BASE = 'https://api.telegram.org/bot'
 TOKEN = '152394201:AAE6wwKF-y9gddMrXUTAnGNbGrifJKFHU-I'
 URL_TOKEN = URL_BASE + TOKEN
 
-""" Copy the credentials from the console """
-
-CLIENT_ID = '251746268845-gk3fdoc0pqspsjq0q3svthvdeggjbr4v.apps.googleusercontent.com'
-CLIENT_SECRET = 'ffLzVzAgrkifWaFhZZK3BlUS'
-
-""" Check https://developers.google.com/derive/scopes """
-OAUTH_SCOPE = 'https://www.googleapis.com/auth/drive'
-""" Redirect URI fron installed apps  """
-REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'
+# """ Copy the credentials from the console """
+#
+# CLIENT_ID = '251746268845-gk3fdoc0pqspsjq0q3svthvdeggjbr4v.apps.googleusercontent.com'
+# CLIENT_SECRET = 'ffLzVzAgrkifWaFhZZK3BlUS'
+#
+# """ Check https://developers.google.com/derive/scopes """
+# OAUTH_SCOPE = 'https://www.googleapis.com/auth/drive'
+# """ Redirect URI fron installed apps  """
+# REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'
 """ Path to file to uplodad to gdive """
 FILENAME = "doc.txt"
 
@@ -33,6 +42,7 @@ offset = 0
 from_id = 0
 """
 """
+
 
 def check_updates():
     global offset
@@ -68,33 +78,73 @@ def check_updates():
 
 """
 """
+
+SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+CLIENT_SECRET_FILE = 'client_secret_251746268845-umuqnbsqvg90nihi2oiqouisco8san6k.apps.googleusercontent.com.json'
+APPLICATION_NAME = 'Drive API Python Quickstart'
+
+
+def get_credentials():
+    """Gets valid user credentials from storage.
+
+    If nothing has been stored, or if the stored credentials are invalid,
+    the OAuth2 flow is completed to obtain the new credentials.
+
+    Returns:
+        Credentials, the obtained credential.
+    """
+    home_dir = os.path.expanduser('~')
+    credential_dir = os.path.join(home_dir, '.credentials')
+    if not os.path.exists(credential_dir):
+        os.makedirs(credential_dir)
+    credential_path = os.path.join(credential_dir,
+                                   'drive-python-quickstart.json')
+
+    store = oauth2client.file.Storage(credential_path)
+    credentials = store.get()
+    if not credentials or credentials.invalid:
+        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
+        flow.user_agent = APPLICATION_NAME
+        if flags:
+            credentials = tools.run_flow(flow, store, flags)
+        else: # Needed only for compatibility with Python 2.6
+            credentials = tools.run(flow, store)
+        print('Storing credentials to ' + credential_path)
+    return credentials
+
+
+
+"""
+"""
 def post_document(caller_id):
-    """ Go throught the OAuth 2.0 flow and retrieve credentials """
-    flow = OAuth2WebServerFlow(
-        CLIENT_ID, CLIENT_SECRET, OAUTH_SCOPE, redirect_uri=REDIRECT_URI)
-    authorize_url = flow.step1_get_authorize_url()
-    print('Go to the following link in your browser: ' + authorize_url)
-    send_text(from_id, authorize_url)
 
-    code = raw_input('Enter verification code, you got: ').strip()
-    credentials = flow.step2_exchange(code)
+    credentials = get_credentials()
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('drive', 'v2', http=http)
 
-    """ Create an httplib2 object and authorize it with our credentials """
-    http = httplib2.Http()
-    http = credentials.authorize(http)
+    results = service.files().list(maxResults=10).execute()
+    items = results.get('items', [])
+    if not items:
+        print('No files found.')
+    else:
+        print('Files:')
+        for item in items:
+            print('{0} ({1})'.format(item['title'], item['id']))
 
-    drive_service = build('drive', 'v2', http=http)
-
-    """ Insert a file """
-    media_body = MediaFileUpload(FILENAME, mimetype='text/plain', resumable=True)
-
-    body = {'title': 'My Doc',
-            'description': 'A test document',
-            'mimeType': 'text/plain'}
-
-
-    file = drive_service.files().insert(body=body, media_body=media_body).execute()
-    pprint.pprint(file)
+    # credentials = get_credentials()
+    # http = credentials.authorize(httplib2.Http())
+    #
+    # drive_service = discovery.build('drive', 'v2', http=http)
+    #
+    # """ Insert a file """
+    # media_body = discovery.MediaFileUpload(FILENAME, mimetype='text/plain', resumable=True)
+    #
+    # body = {'title': 'My Doc',
+    #         'description': 'A test document',
+    #         'mimeType': 'text/plain'}
+    #
+    # file = drive_service.files().insert(body=body, media_body=media_body).execute()
+    # pprint.pprint(file)
 
 
 """
